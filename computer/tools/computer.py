@@ -108,12 +108,16 @@ class ComputerTool(BaseAnthropicTool):
             
             if action == "mouse_move":
                 pyautogui.moveTo(x, y)
-                return ToolResult()
+                await asyncio.sleep(self._screenshot_delay)
+                screenshot_base64 = (await self.screenshot()).base64_image
+                return ToolResult(base64_image=screenshot_base64)
             elif action == "left_click_drag":
                 pyautogui.mouseDown()
                 pyautogui.moveTo(x, y)
                 pyautogui.mouseUp()
-                return ToolResult()
+                await asyncio.sleep(self._screenshot_delay)
+                screenshot_base64 = (await self.screenshot()).base64_image
+                return ToolResult(base64_image=screenshot_base64)
 
         if action in ("key", "type"):
             if text is None:
@@ -121,9 +125,12 @@ class ComputerTool(BaseAnthropicTool):
                 
             if action == "key":
                 pyautogui.press(text)
-                return ToolResult()
+                await asyncio.sleep(self._screenshot_delay)
+                screenshot_base64 = (await self.screenshot()).base64_image
+                return ToolResult(base64_image=screenshot_base64)
             elif action == "type":
                 pyautogui.write(text, interval=TYPING_DELAY_MS/1000)
+                await asyncio.sleep(self._screenshot_delay)
                 screenshot_base64 = (await self.screenshot()).base64_image
                 return ToolResult(base64_image=screenshot_base64)
 
@@ -142,7 +149,9 @@ class ComputerTool(BaseAnthropicTool):
                     "double_click": lambda: pyautogui.click(clicks=2)
                 }
                 click_map[action]()
-                return ToolResult()
+                await asyncio.sleep(self._screenshot_delay)
+                screenshot_base64 = (await self.screenshot()).base64_image
+                return ToolResult(base64_image=screenshot_base64)
 
         raise ToolError(f"Invalid action: {action}")
 
