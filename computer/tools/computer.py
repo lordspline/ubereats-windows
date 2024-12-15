@@ -1,5 +1,6 @@
 import asyncio
 import base64
+from enum import Enum
 import os
 import win32gui
 import win32con
@@ -43,7 +44,7 @@ MAX_SCALING_TARGETS: dict[str, Resolution] = {
 }
 
 
-class ScalingSource(StrEnum):
+class ScalingSource(Enum):
     COMPUTER = "computer"
     API = "api"
 
