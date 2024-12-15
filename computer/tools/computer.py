@@ -161,97 +161,53 @@ class ComputerTool(BaseAnthropicTool):
         """Take a screenshot using PIL's ImageGrab and draw a cursor indicator"""
         from PIL import Image, ImageDraw
         import win32gui
-        import win32api
-        import win32con
-        import logging
-        
-        # Set up logging
-        logging.basicConfig(
-            filename='C:\\Users\\Administrator\\screenshot_debug.log',
-            level=logging.DEBUG,
-            format='%(asctime)s - %(levelname)s - %(message)s'
-        )
-        logger = logging.getLogger('screenshot')
         
         output_dir = Path(OUTPUT_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
         path = output_dir / f"screenshot_{uuid4().hex}.png"
         
-        logger.debug("Taking screenshot...")
+        # Take the screenshot
         screenshot = ImageGrab.grab()
         
         try:
-            # Method 1: Simple cursor indicator
+            # Get cursor position and draw indicator
             cursor_pos = win32gui.GetCursorPos()
-            logger.debug(f"Cursor position: {cursor_pos}")
-            
-            # Create a draw object
             draw = ImageDraw.Draw(screenshot)
             
-            # Draw a simple cursor indicator (crosshair)
+            # Draw cursor arrow
             x, y = cursor_pos
-            size = 20  # Size of the cursor indicator
+            cursor_points = [
+                (x, y),  # Tip of cursor
+                (x + 16, y + 16),  # Bottom right
+                (x, y + 11),  # Bottom middle indent
+                (x + 11, y),  # Middle right indent
+                (x, y)  # Back to tip
+            ]
             
-            # Draw crosshair
-            draw.line((x - size, y, x + size, y), fill='red', width=2)
-            draw.line((x, y - size, x, y + size), fill='red', width=2)
+            # Draw white cursor with black border
+            draw.polygon(cursor_points, fill='white', outline='black')
             
-            logger.debug("Drew cursor indicator")
-            
-            # Try Method 2 if Method 1 doesn't show well
-            try:
-                flags, hcursor, _ = win32gui.GetCursorInfo()
-                logger.debug(f"Cursor info - flags: {flags}, hcursor: {hcursor}")
-                
-                if flags & win32con.CURSOR_SHOWING:
-                    # Get cursor image
-                    icon_info = win32gui.GetIconInfo(hcursor)
-                    logger.debug(f"Icon info: {icon_info}")
-                    
-                    # Try to get system cursor
-                    cursor_id = win32con.IDC_ARROW  # Default arrow cursor
-                    hcursor = win32gui.LoadCursor(0, cursor_id)
-                    logger.debug(f"Loaded system cursor: {hcursor}")
-                    
-                    if hcursor:
-                        icon_info = win32gui.GetIconInfo(hcursor)
-                        logger.debug(f"System cursor icon info: {icon_info}")
-                        
-                        # Create small cursor image
-                        cursor_img = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
-                        draw = ImageDraw.Draw(cursor_img)
-                        
-                        # Draw a white cursor with black border
-                        points = [(0, 0), (16, 24), (24, 16)]  # Arrow shape
-                        draw.polygon(points, fill='white', outline='black')
-                        
-                        # Paste the cursor image
-                        screenshot.paste(cursor_img, (x-2, y-2), cursor_img)
-                        logger.debug("Drew system cursor shape")
-            
-            except Exception as e:
-                logger.error(f"Method 2 failed: {str(e)}")
-                pass
-        
-        except Exception as e:
-            logger.error(f"Screenshot cursor addition failed: {str(e)}")
+        except Exception:
+            # If cursor drawing fails, continue with basic screenshot
             pass
         
-        try:
-            if self._scaling_enabled:
-                orig_size = screenshot.size
-                x, y = self.scale_coordinates(ScalingSource.COMPUTER, self.width, self.height)
-                screenshot = screenshot.resize((x, y))
-                logger.debug(f"Resized screenshot from {orig_size} to {(x, y)}")
-            
-            screenshot.save(str(path))
-            logger.debug(f"Saved screenshot to {path}")
-            
-            if path.exists():
-                return ToolResult(base64_image=base64.b64encode(path.read_bytes()).decode())
-        except Exception as e:
-            logger.error(f"Failed to save or encode screenshot: {str(e)}")
-            raise ToolError("Failed to save or encode screenshot")
+        # Handle scaling if enabled
+        if self._scaling_enabled:
+            x, y = self.scale_coordinates(ScalingSource.COMPUTER, self.width, self.height)
+            screenshot = screenshot.resize((x, y))
+        
+        # Save and cleanup
+        screenshot.save(str(path))
+        
+        if path.exists():
+            try:
+                base64_image = base64.b64encode(path.read_bytes()).decode()
+                path.unlink()  # Delete the temporary file
+                return ToolResult(base64_image=base64_image)
+            except Exception:
+                if path.exists():
+                    path.unlink()  # Ensure cleanup even if encoding fails
+                raise ToolError("Failed to encode screenshot")
         
         raise ToolError("Failed to take screenshot")
 
