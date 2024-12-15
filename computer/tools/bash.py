@@ -64,43 +64,48 @@ class _BashSession:
         assert self._process.stdout
         assert self._process.stderr
 
-        # For Windows CMD, use echo command with the sentinel
-        cmd_with_sentinel = f"{command} & echo {self._sentinel}\n"
+        # Add echo %errorlevel% to get command execution status
+        cmd_with_sentinel = f"{command} & echo %errorlevel% & echo {self._sentinel}\n"
         
-        # send command to the process
-        self._process.stdin.write(cmd_with_sentinel.encode())
-        await self._process.stdin.drain()
-
-        # read output from the process, until the sentinel is found
         try:
+            # Send command
+            self._process.stdin.write(cmd_with_sentinel.encode())
+            await self._process.stdin.drain()
+
+            output = ""
+            error = ""
+
+            # Read output until sentinel is found
             async with asyncio.timeout(self._timeout):
                 while True:
-                    await asyncio.sleep(self._output_delay)
-                    # if we read directly from stdout/stderr, it will wait forever for
-                    # EOF. use the StreamReader buffer directly instead.
-                    output = self._process.stdout._buffer.decode()  # pyright: ignore[reportAttributeAccessIssue]
-                    if self._sentinel in output:
-                        # strip the sentinel and break
-                        output = output[: output.index(self._sentinel)]
+                    # Read one line at a time
+                    line = await self._process.stdout.readline()
+                    if not line:
                         break
+                        
+                    line_str = line.decode()
+                    
+                    # Check for sentinel
+                    if self._sentinel in line_str:
+                        break
+                        
+                    output += line_str
+
+            # Get any stderr output
+            error = await self._process.stderr.read()
+            error = error.decode() if error else ""
+
+            # Clean up output
+            output = output.strip()
+            error = error.strip()
+
+            return CLIResult(output=output, error=error)
+
         except asyncio.TimeoutError:
             self._timed_out = True
             raise ToolError(
                 f"timed out: shell has not returned in {self._timeout} seconds and must be restarted",
             ) from None
-
-        if output.endswith("\n"):
-            output = output[:-1]
-
-        error = self._process.stderr._buffer.decode()  # pyright: ignore[reportAttributeAccessIssue]
-        if error.endswith("\n"):
-            error = error[:-1]
-
-        # clear the buffers so that the next output can be read correctly
-        self._process.stdout._buffer.clear()  # pyright: ignore[reportAttributeAccessIssue]
-        self._process.stderr._buffer.clear()  # pyright: ignore[reportAttributeAccessIssue]
-
-        return CLIResult(output=output, error=error)
 
 
 class BashTool(BaseAnthropicTool):
