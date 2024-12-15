@@ -171,74 +171,60 @@ class ComputerTool(BaseAnthropicTool):
         screenshot = ImageGrab.grab()
         
         try:
-            # Get cursor position and info
-            cursor_info = win32gui.GetCursorInfo()
-            cursor_pos = win32gui.GetCursorPos()
+            # Get cursor position
+            flags, hcursor, (x, y) = win32gui.GetCursorInfo()
             
-            if cursor_info[1] != 0:  # If cursor is visible
-                # Get the cursor icon
-                hicon = cursor_info[1]
+            if flags & win32con.CURSOR_SHOWING:  # Check if cursor is visible
+                # Get the cursor size
+                _, _, (width, height), _ = win32gui.GetIconInfo(hcursor)
                 
-                # Get icon info more safely
+                # Create a temporary surface to draw the cursor
+                hdc = win32gui.GetDC(0)
+                hdc_mem = win32gui.CreateCompatibleDC(hdc)
+                hbmp = win32gui.CreateCompatibleBitmap(hdc, width, height)
+                hbmp_old = win32gui.SelectObject(hdc_mem, hbmp)
+                
                 try:
-                    icon_info = win32gui.GetIconInfo(hicon)
+                    # Draw the cursor
+                    win32gui.DrawIconEx(
+                        hdc_mem,
+                        0, 0,
+                        hcursor,
+                        width, height,
+                        0, None,
+                        win32con.DI_NORMAL | win32con.DI_DEFAULTSIZE
+                    )
                     
-                    # Calculate hotspot offset
-                    hotspotx = icon_info[1]
-                    hotspoty = icon_info[2]
+                    # Convert to PIL Image
+                    cursor_img = Image.frombuffer(
+                        'RGBA',
+                        (width, height),
+                        win32gui.GetBitmapBits(hbmp, width * height * 4),
+                        'raw',
+                        'BGRA',
+                        0,
+                        1
+                    )
                     
-                    # Create DC and bitmap
-                    hdc = win32gui.GetDC(0)
-                    try:
-                        hbmp = win32gui.CreateBitmap(32, 32, 1, 32, None)
-                        hdc_mem = win32gui.CreateCompatibleDC(hdc)
-                        
-                        # Select bitmap into DC
-                        old_bmp = win32gui.SelectObject(hdc_mem, hbmp)
-                        
-                        # Draw icon
-                        win32gui.DrawIcon(hdc_mem, 0, 0, hicon)
-                        
-                        # Create cursor image
-                        cursor_img = Image.frombuffer('RGBA', (32, 32), win32gui.GetBitmapBits(hbmp, 32*32*4), 'raw', 'BGRA', 0, 1)
-                        
-                        # Calculate cursor position accounting for hotspot
-                        x = cursor_pos[0] - hotspotx
-                        y = cursor_pos[1] - hotspoty
-                        
-                        # Paste cursor onto screenshot
-                        screenshot.paste(cursor_img, (x, y), cursor_img)
-                        
-                        # Clean up GDI resources
-                        win32gui.SelectObject(hdc_mem, old_bmp)
-                        win32gui.DeleteObject(hbmp)
-                        win32gui.DeleteDC(hdc_mem)
-                    finally:
-                        win32gui.ReleaseDC(0, hdc)
-                        
-                    # Clean up icon resources - only if they exist
-                    if icon_info[3]:  # hbmMask
-                        try:
-                            win32gui.DeleteObject(icon_info[3])
-                        except:
-                            pass
-                    if icon_info[4]:  # hbmColor
-                        try:
-                            win32gui.DeleteObject(icon_info[4])
-                        except:
-                            pass
-                except:
-                    # If anything fails during cursor capture, just continue with the screenshot without cursor
-                    pass
-                
-        except:
-            # If cursor handling completely fails, just continue with the basic screenshot
+                    # Paste cursor at its position
+                    screenshot.paste(cursor_img, (x, y), cursor_img)
+                    
+                finally:
+                    # Clean up
+                    win32gui.SelectObject(hdc_mem, hbmp_old)
+                    win32gui.DeleteObject(hbmp)
+                    win32gui.DeleteDC(hdc_mem)
+                    win32gui.ReleaseDC(0, hdc)
+                    
+        except Exception as e:
+            # If cursor capture fails, continue with basic screenshot
+            print(f"Cursor capture failed: {str(e)}")
             pass
-            
+        
         if self._scaling_enabled:
             x, y = self.scale_coordinates(ScalingSource.COMPUTER, self.width, self.height)
             screenshot = screenshot.resize((x, y))
-            
+        
         screenshot.save(str(path))
         
         if path.exists():
