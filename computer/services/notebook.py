@@ -181,7 +181,7 @@ class NotebookService:
         self.notebooks: Dict[str, Notebook] = {}
         self.kernel_sessions: Dict[str, KernelSession] = {}
         self.server_port = 8888
-        self.notebook_dir = Path("/home/scrapybara/notebooks")
+        self.notebook_dir = Path("C:\\Users\\Administrator\\notebooks")
         self.server_process = None
         self.kernel_spec_manager = KernelSpecManager()
         self.setup_directories()
@@ -354,11 +354,10 @@ class NotebookService:
 
     async def start_server(self) -> dict:
         """Start Jupyter server and return connection info"""
-        # Generate random token for security
         token = secrets.token_hex(32)
         
         # Create jupyter config
-        config_dir = Path("/home/scrapybara/.jupyter")
+        config_dir = Path("C:\\Users\\Administrator\\.jupyter")
         config_dir.mkdir(parents=True, exist_ok=True)
         
         config = {
