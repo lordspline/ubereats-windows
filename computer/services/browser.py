@@ -4,7 +4,6 @@ from typing import Optional
 import asyncio
 import aiohttp
 import subprocess
-from playwright.async_api import async_playwright, Browser
 
 class BrowserManager:
     def __init__(self):
