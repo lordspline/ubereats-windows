@@ -174,18 +174,16 @@ class ComputerTool(BaseAnthropicTool):
             cursor_pos = win32gui.GetCursorPos()
             draw = ImageDraw.Draw(screenshot)
             
-            # Draw cursor arrow
             x, y = cursor_pos
-            cursor_points = [
-                (x, y),  # Tip of cursor
-                (x + 16, y + 16),  # Bottom right
-                (x, y + 11),  # Bottom middle indent
-                (x + 11, y),  # Middle right indent
-                (x, y)  # Back to tip
-            ]
             
-            # Draw white cursor with black border
-            draw.polygon(cursor_points, fill='white', outline='black')
+            # Draw crosshair
+            size = 20
+            draw.line((x - size, y, x + size, y), fill='red', width=2)
+            draw.line((x, y - size, x, y + size), fill='red', width=2)
+            
+            # Draw simple triangle cursor
+            points = [(x, y), (x + 16, y + 24), (x + 24, y + 16)]
+            draw.polygon(points, fill='white', outline='black')
             
         except Exception:
             # If cursor drawing fails, continue with basic screenshot
