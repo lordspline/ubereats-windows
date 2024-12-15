@@ -8,12 +8,12 @@ from .base import BaseAnthropicTool, CLIResult, ToolError, ToolResult
 
 
 class _BashSession:
-    """A session of a bash shell."""
+    """A session of a command shell."""
 
     _started: bool
     _process: asyncio.subprocess.Process
 
-    command: str = "/bin/bash"
+    command: str = "cmd.exe"
     _output_delay: float = 0.2  # seconds
     _timeout: float = 120.0  # seconds
     _sentinel: str = "<<exit>>"
@@ -28,7 +28,6 @@ class _BashSession:
 
         self._process = await asyncio.create_subprocess_shell(
             self.command,
-            preexec_fn=os.setsid,
             shell=True,
             bufsize=0,
             stdin=asyncio.subprocess.PIPE,
@@ -39,7 +38,7 @@ class _BashSession:
         self._started = True
 
     def stop(self):
-        """Terminate the bash shell."""
+        """Terminate the shell."""
         if not self._started:
             raise ToolError("Session has not started.")
         if self._process.returncode is not None:
@@ -47,17 +46,17 @@ class _BashSession:
         self._process.terminate()
 
     async def run(self, command: str):
-        """Execute a command in the bash shell."""
+        """Execute a command in the shell."""
         if not self._started:
             raise ToolError("Session has not started.")
         if self._process.returncode is not None:
             return ToolResult(
                 system="tool must be restarted",
-                error=f"bash has exited with returncode {self._process.returncode}",
+                error=f"shell has exited with returncode {self._process.returncode}",
             )
         if self._timed_out:
             raise ToolError(
-                f"timed out: bash has not returned in {self._timeout} seconds and must be restarted",
+                f"timed out: shell has not returned in {self._timeout} seconds and must be restarted",
             )
 
         # we know these are not None because we created the process with PIPEs
@@ -65,10 +64,11 @@ class _BashSession:
         assert self._process.stdout
         assert self._process.stderr
 
+        # For Windows CMD, use echo command with the sentinel
+        cmd_with_sentinel = f"{command} & echo {self._sentinel}\n"
+        
         # send command to the process
-        self._process.stdin.write(
-            command.encode() + f"; echo '{self._sentinel}'\n".encode()
-        )
+        self._process.stdin.write(cmd_with_sentinel.encode())
         await self._process.stdin.drain()
 
         # read output from the process, until the sentinel is found
@@ -86,7 +86,7 @@ class _BashSession:
         except asyncio.TimeoutError:
             self._timed_out = True
             raise ToolError(
-                f"timed out: bash has not returned in {self._timeout} seconds and must be restarted",
+                f"timed out: shell has not returned in {self._timeout} seconds and must be restarted",
             ) from None
 
         if output.endswith("\n"):
