@@ -10,7 +10,8 @@ from uuid import uuid4
 from typing import Literal, TypedDict
 from anthropic.types.beta import BetaToolComputerUse20241022Param
 from .base import BaseAnthropicTool, ToolError, ToolResult
-from PIL import ImageGrab
+from PIL import ImageGrab, Image, ImageDraw
+import logging
 
 OUTPUT_DIR = "C:\\temp\\outputs"
 
@@ -157,78 +158,101 @@ class ComputerTool(BaseAnthropicTool):
         raise ToolError(f"Invalid action: {action}")
 
     async def screenshot(self):
-        """Take a screenshot using PIL's ImageGrab and explicitly draw the cursor"""
-        from PIL import Image
+        """Take a screenshot using PIL's ImageGrab and draw a cursor indicator"""
+        from PIL import Image, ImageDraw
         import win32gui
         import win32api
         import win32con
+        import logging
+        
+        # Set up logging
+        logging.basicConfig(
+            filename='C:\\Users\\Administrator\\screenshot_debug.log',
+            level=logging.DEBUG,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
+        logger = logging.getLogger('screenshot')
         
         output_dir = Path(OUTPUT_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
         path = output_dir / f"screenshot_{uuid4().hex}.png"
         
-        # Take the screenshot
+        logger.debug("Taking screenshot...")
         screenshot = ImageGrab.grab()
         
         try:
-            # Get cursor position
-            flags, hcursor, (x, y) = win32gui.GetCursorInfo()
+            # Method 1: Simple cursor indicator
+            cursor_pos = win32gui.GetCursorPos()
+            logger.debug(f"Cursor position: {cursor_pos}")
             
-            if flags & win32con.CURSOR_SHOWING:  # Check if cursor is visible
-                # Get the cursor size
-                _, _, (width, height), _ = win32gui.GetIconInfo(hcursor)
+            # Create a draw object
+            draw = ImageDraw.Draw(screenshot)
+            
+            # Draw a simple cursor indicator (crosshair)
+            x, y = cursor_pos
+            size = 20  # Size of the cursor indicator
+            
+            # Draw crosshair
+            draw.line((x - size, y, x + size, y), fill='red', width=2)
+            draw.line((x, y - size, x, y + size), fill='red', width=2)
+            
+            logger.debug("Drew cursor indicator")
+            
+            # Try Method 2 if Method 1 doesn't show well
+            try:
+                flags, hcursor, _ = win32gui.GetCursorInfo()
+                logger.debug(f"Cursor info - flags: {flags}, hcursor: {hcursor}")
                 
-                # Create a temporary surface to draw the cursor
-                hdc = win32gui.GetDC(0)
-                hdc_mem = win32gui.CreateCompatibleDC(hdc)
-                hbmp = win32gui.CreateCompatibleBitmap(hdc, width, height)
-                hbmp_old = win32gui.SelectObject(hdc_mem, hbmp)
-                
-                try:
-                    # Draw the cursor
-                    win32gui.DrawIconEx(
-                        hdc_mem,
-                        0, 0,
-                        hcursor,
-                        width, height,
-                        0, None,
-                        win32con.DI_NORMAL | win32con.DI_DEFAULTSIZE
-                    )
+                if flags & win32con.CURSOR_SHOWING:
+                    # Get cursor image
+                    icon_info = win32gui.GetIconInfo(hcursor)
+                    logger.debug(f"Icon info: {icon_info}")
                     
-                    # Convert to PIL Image
-                    cursor_img = Image.frombuffer(
-                        'RGBA',
-                        (width, height),
-                        win32gui.GetBitmapBits(hbmp, width * height * 4),
-                        'raw',
-                        'BGRA',
-                        0,
-                        1
-                    )
+                    # Try to get system cursor
+                    cursor_id = win32con.IDC_ARROW  # Default arrow cursor
+                    hcursor = win32gui.LoadCursor(0, cursor_id)
+                    logger.debug(f"Loaded system cursor: {hcursor}")
                     
-                    # Paste cursor at its position
-                    screenshot.paste(cursor_img, (x, y), cursor_img)
-                    
-                finally:
-                    # Clean up
-                    win32gui.SelectObject(hdc_mem, hbmp_old)
-                    win32gui.DeleteObject(hbmp)
-                    win32gui.DeleteDC(hdc_mem)
-                    win32gui.ReleaseDC(0, hdc)
-                    
+                    if hcursor:
+                        icon_info = win32gui.GetIconInfo(hcursor)
+                        logger.debug(f"System cursor icon info: {icon_info}")
+                        
+                        # Create small cursor image
+                        cursor_img = Image.new('RGBA', (32, 32), (0, 0, 0, 0))
+                        draw = ImageDraw.Draw(cursor_img)
+                        
+                        # Draw a white cursor with black border
+                        points = [(0, 0), (16, 24), (24, 16)]  # Arrow shape
+                        draw.polygon(points, fill='white', outline='black')
+                        
+                        # Paste the cursor image
+                        screenshot.paste(cursor_img, (x-2, y-2), cursor_img)
+                        logger.debug("Drew system cursor shape")
+            
+            except Exception as e:
+                logger.error(f"Method 2 failed: {str(e)}")
+                pass
+        
         except Exception as e:
-            # If cursor capture fails, continue with basic screenshot
-            print(f"Cursor capture failed: {str(e)}")
+            logger.error(f"Screenshot cursor addition failed: {str(e)}")
             pass
         
-        if self._scaling_enabled:
-            x, y = self.scale_coordinates(ScalingSource.COMPUTER, self.width, self.height)
-            screenshot = screenshot.resize((x, y))
+        try:
+            if self._scaling_enabled:
+                orig_size = screenshot.size
+                x, y = self.scale_coordinates(ScalingSource.COMPUTER, self.width, self.height)
+                screenshot = screenshot.resize((x, y))
+                logger.debug(f"Resized screenshot from {orig_size} to {(x, y)}")
+            
+            screenshot.save(str(path))
+            logger.debug(f"Saved screenshot to {path}")
+            
+            if path.exists():
+                return ToolResult(base64_image=base64.b64encode(path.read_bytes()).decode())
+        except Exception as e:
+            logger.error(f"Failed to save or encode screenshot: {str(e)}")
+            raise ToolError("Failed to save or encode screenshot")
         
-        screenshot.save(str(path))
-        
-        if path.exists():
-            return ToolResult(base64_image=base64.b64encode(path.read_bytes()).decode())
         raise ToolError("Failed to take screenshot")
 
     def scale_coordinates(self, source: ScalingSource, x: int, y: int):
