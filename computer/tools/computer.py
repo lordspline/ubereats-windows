@@ -10,6 +10,7 @@ from uuid import uuid4
 from typing import Literal, TypedDict
 from anthropic.types.beta import BetaToolComputerUse20241022Param
 from .base import BaseAnthropicTool, ToolError, ToolResult
+from PIL import ImageGrab
 
 OUTPUT_DIR = "C:\\temp\\outputs"
 
@@ -156,12 +157,13 @@ class ComputerTool(BaseAnthropicTool):
         raise ToolError(f"Invalid action: {action}")
 
     async def screenshot(self):
-        """Take a screenshot using PyAutoGUI"""
+        """Take a screenshot using PIL's ImageGrab to include cursor"""
         output_dir = Path(OUTPUT_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
         path = output_dir / f"screenshot_{uuid4().hex}.png"
         
-        screenshot = pyautogui.screenshot()
+        screenshot = ImageGrab.grab(include_layered_windows=True)
+        
         if self._scaling_enabled:
             x, y = self.scale_coordinates(ScalingSource.COMPUTER, self.width, self.height)
             screenshot = screenshot.resize((x, y))
