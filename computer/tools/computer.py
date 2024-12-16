@@ -93,9 +93,9 @@ class ComputerTool(BaseAnthropicTool):
         # Disable PyAutoGUI failsafe
         pyautogui.FAILSAFE = False
         
-        self.width = int(os.getenv("WIDTH") or 0)
-        self.height = int(os.getenv("HEIGHT") or 0)
-        assert self.width and self.height, "WIDTH, HEIGHT must be set"
+        # Get screen size from pyautogui
+        self.width, self.height = pyautogui.size()
+        
         if (display_num := os.getenv("DISPLAY_NUM")) is not None:
             self.display_num = int(display_num)
             self._display_prefix = f"DISPLAY=:{self.display_num} "
