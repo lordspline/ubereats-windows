@@ -107,6 +107,7 @@ class ComputerTool(BaseAnthropicTool):
             if coordinate is None:
                 raise ToolError(f"coordinate is required for {action}")
             x, y = self.scale_coordinates(ScalingSource.API, coordinate[0], coordinate[1])
+            print(f"Scaling coordinates: {x}, {y}")
             
             if action == "mouse_move":
                 pyautogui.moveTo(x, y)
