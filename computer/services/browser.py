@@ -60,7 +60,6 @@ class BrowserManager:
                 "--remote-debugging-port=9222",
                 "--no-first-run",
                 "--no-default-browser-check",
-                "--headless=new",  # Use new headless mode
                 "--disable-gpu",
                 "--disable-software-rasterizer",
                 "--disable-dev-shm-usage",
