@@ -64,7 +64,9 @@ class BrowserManager:
                 "--disable-software-rasterizer",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
-                "--window-size=1024,768"
+                "--window-size=1024,768",
+                "--remote-debugging-address=0.0.0.0",
+                "--remote-allow-origins=*"
             ])
             
             # Get the actual WebSocket endpoint
