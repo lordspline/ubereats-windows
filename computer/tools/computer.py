@@ -90,6 +90,18 @@ class ComputerTool(BaseAnthropicTool):
     def __init__(self):
         super().__init__()
         
+        # Get actual screen resolution
+        self.actual_width, self.actual_height = pyautogui.size()
+        print(f"Actual screen resolution: {self.actual_width}x{self.actual_height}")
+        
+        # Model's expected resolution
+        self.model_width = 1024
+        self.model_height = 768
+        
+        # Calculate scaling factors
+        self.x_scale = self.actual_width / self.model_width
+        self.y_scale = self.actual_height / self.model_height
+        
         # Disable PyAutoGUI failsafe
         pyautogui.FAILSAFE = False
         
@@ -109,8 +121,9 @@ class ComputerTool(BaseAnthropicTool):
         if action in ("mouse_move", "left_click_drag"):
             if coordinate is None:
                 raise ToolError(f"coordinate is required for {action}")
-            x, y = self.scale_coordinates(ScalingSource.API, coordinate[0], coordinate[1])
-            print(f"Scaling coordinates: {x}, {y}")
+                
+            # Scale the coordinates from 1024x768 to actual resolution
+            x, y = self.scale_coordinates(coordinate[0], coordinate[1])
             
             if action == "mouse_move":
                 pyautogui.moveTo(x, y)
