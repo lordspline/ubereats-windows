@@ -89,7 +89,10 @@ class ComputerTool(BaseAnthropicTool):
 
     def __init__(self):
         super().__init__()
-
+        
+        # Disable PyAutoGUI failsafe
+        pyautogui.FAILSAFE = False
+        
         self.width = int(os.getenv("WIDTH") or 0)
         self.height = int(os.getenv("HEIGHT") or 0)
         assert self.width and self.height, "WIDTH, HEIGHT must be set"
