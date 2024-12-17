@@ -2,6 +2,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import asyncio
+import win32gui
+import win32con
+from fastapi.middleware.cors import CORSMiddleware
 
 from .tools import (
     ComputerTool, 
@@ -22,11 +25,49 @@ from .services.notebook import (
     KernelInfo
 )
 
+async def wait_for_session(timeout=300):  # 5 minute timeout
+    """Wait for an active desktop session"""
+    start_time = asyncio.get_event_loop().time()
+    while True:
+        try:
+            desktop = win32gui.GetDesktopWindow()
+            dc = win32gui.GetDC(desktop)
+            if dc != 0:
+                win32gui.ReleaseDC(desktop, dc)
+                return True
+        except Exception:
+            pass
+        
+        if asyncio.get_event_loop().time() - start_time > timeout:
+            raise Exception("Timeout waiting for desktop session")
+            
+        await asyncio.sleep(1)
+
 app = FastAPI(
     title="Computer Use API",
     description="REST API for computer use tools",
     version="1.0.0"
 )
+
+# Add CORS middleware if needed
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.on_event("startup")
+async def startup_event():
+    """Wait for desktop session on startup"""
+    try:
+        await wait_for_session()
+    except Exception as e:
+        print(f"Warning: Failed to detect desktop session: {e}")
+        # Optionally exit if you want to enforce desktop session requirement
+        # import sys
+        # sys.exit(1)
 
 # Initialize tools
 computer_tool = ComputerTool()
