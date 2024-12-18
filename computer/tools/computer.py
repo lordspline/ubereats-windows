@@ -12,6 +12,10 @@ from anthropic.types.beta import BetaToolComputerUse20241022Param
 from .base import BaseAnthropicTool, ToolError, ToolResult
 from PIL import ImageGrab, Image, ImageDraw
 import logging
+import win32ui
+import win32api
+from ctypes import windll
+import time
 
 OUTPUT_DIR = "C:\\temp\\outputs"
 
@@ -162,56 +166,115 @@ class ComputerTool(BaseAnthropicTool):
         raise ToolError(f"Invalid action: {action}")
 
     async def screenshot(self):
-        """Take a screenshot using PIL's ImageGrab and draw a cursor indicator"""
-        from PIL import Image, ImageDraw
-        import win32gui
-        
+        """Take a screenshot using multiple fallback methods"""
         output_dir = Path(OUTPUT_DIR)
         output_dir.mkdir(parents=True, exist_ok=True)
         path = output_dir / f"screenshot_{uuid4().hex}.png"
-        
-        # Take the screenshot
-        screenshot = ImageGrab.grab()
-        
+
         try:
-            # Get cursor position and draw indicator
-            cursor_pos = win32gui.GetCursorPos()
-            draw = ImageDraw.Draw(screenshot)
-            
-            x, y = cursor_pos
-            
-            # Draw crosshair
-            size = 20
-            draw.line((x - size, y, x + size, y), fill='red', width=2)
-            draw.line((x, y - size, x, y + size), fill='red', width=2)
-            
-            # Draw simple triangle cursor
-            points = [(x, y), (x + 16, y + 24), (x + 24, y + 16)]
-            draw.polygon(points, fill='white', outline='black')
-            
-        except Exception:
-            # If cursor drawing fails, continue with basic screenshot
-            pass
-        
-        # Handle scaling if enabled
-        if self._scaling_enabled:
-            x, y = self.scale_coordinates(ScalingSource.COMPUTER, self.width, self.height)
-            screenshot = screenshot.resize((x, y))
-        
-        # Save and cleanup
-        screenshot.save(str(path))
-        
-        if path.exists():
+            # Try multiple screenshot methods
+            screenshot = None
+            error_messages = []
+
+            # Method 1: Try PIL ImageGrab
             try:
-                base64_image = base64.b64encode(path.read_bytes()).decode()
-                path.unlink()  # Delete the temporary file
-                return ToolResult(base64_image=base64_image)
+                screenshot = ImageGrab.grab()
+            except Exception as e:
+                error_messages.append(f"PIL ImageGrab failed: {str(e)}")
+
+            # Method 2: Try Win32 API if PIL failed
+            if screenshot is None:
+                try:
+                    screenshot = self._win32_screenshot()
+                except Exception as e:
+                    error_messages.append(f"Win32 screenshot failed: {str(e)}")
+
+            # If both methods failed, raise error
+            if screenshot is None:
+                raise ToolError(f"All screenshot methods failed: {'; '.join(error_messages)}")
+
+            # Draw cursor (optional - won't fail if this doesn't work)
+            try:
+                cursor_pos = win32gui.GetCursorPos()
+                draw = ImageDraw.Draw(screenshot)
+                
+                x, y = cursor_pos
+                
+                # Draw crosshair
+                size = 20
+                draw.line((x - size, y, x + size, y), fill='red', width=2)
+                draw.line((x, y - size, x, y + size), fill='red', width=2)
+                
+                # Draw simple triangle cursor
+                points = [(x, y), (x + 16, y + 24), (x + 24, y + 16)]
+                draw.polygon(points, fill='white', outline='black')
             except Exception:
+                # Continue without cursor if drawing fails
+                pass
+
+            # Handle scaling if enabled
+            if self._scaling_enabled:
+                try:
+                    x, y = self.scale_coordinates(ScalingSource.COMPUTER, self.width, self.height)
+                    screenshot = screenshot.resize((x, y))
+                except Exception as e:
+                    logging.warning(f"Scaling failed: {str(e)}")
+
+            # Save and encode
+            try:
+                screenshot.save(str(path))
                 if path.exists():
-                    path.unlink()  # Ensure cleanup even if encoding fails
-                raise ToolError("Failed to encode screenshot")
+                    base64_image = base64.b64encode(path.read_bytes()).decode()
+                    path.unlink()
+                    return ToolResult(base64_image=base64_image)
+            except Exception as e:
+                if path.exists():
+                    path.unlink()
+                raise ToolError(f"Failed to save or encode screenshot: {str(e)}")
+
+        except Exception as e:
+            raise ToolError(f"Screenshot failed: {str(e)}")
+
+    def _win32_screenshot(self):
+        """Take a screenshot using Win32 API"""
+        # Get handle to primary monitor
+        hwin = win32gui.GetDesktopWindow()
         
-        raise ToolError("Failed to take screenshot")
+        # Get monitor size
+        width = win32api.GetSystemMetrics(win32con.SM_CXVIRTUALSCREEN)
+        height = win32api.GetSystemMetrics(win32con.SM_CYVIRTUALSCREEN)
+        left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
+        top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
+
+        # Create device context
+        hwindc = win32gui.GetWindowDC(hwin)
+        srcdc = win32ui.CreateDCFromHandle(hwindc)
+        memdc = srcdc.CreateCompatibleDC()
+        
+        # Create bitmap
+        bmp = win32ui.CreateBitmap()
+        bmp.CreateCompatibleBitmap(srcdc, width, height)
+        memdc.SelectObject(bmp)
+        
+        # Copy screen into bitmap
+        memdc.BitBlt((0, 0), (width, height), srcdc, (left, top), win32con.SRCCOPY)
+        
+        # Convert bitmap to PIL Image
+        bmpinfo = bmp.GetInfo()
+        bmpstr = bmp.GetBitmapBits(True)
+        img = Image.frombuffer(
+            'RGB',
+            (bmpinfo['bmWidth'], bmpinfo['bmHeight']),
+            bmpstr, 'raw', 'BGRX', 0, 1
+        )
+
+        # Clean up
+        win32gui.DeleteObject(bmp.GetHandle())
+        memdc.DeleteDC()
+        srcdc.DeleteDC()
+        win32gui.ReleaseDC(hwin, hwindc)
+        
+        return img
 
     def scale_coordinates(self, source: ScalingSource, x: int, y: int):
         """Scale coordinates to a target maximum resolution."""
